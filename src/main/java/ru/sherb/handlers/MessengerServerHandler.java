@@ -1,0 +1,87 @@
+package ru.sherb.handlers;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.*;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketException;
+import java.nio.charset.Charset;
+
+public class MessengerServerHandler implements IHandler {
+    final static Logger log = LoggerFactory.getLogger(EchoHandler.class);
+
+    private int port;
+    private boolean execute;
+
+    @Override
+    public void init(int port) {
+        this.port = port;
+    }
+
+    public void start() {
+        execute = true;
+        try (ServerSocket serverSocket = new ServerSocket(port)) {
+            log.info("Waiting for a client...");
+
+            Socket socket = serverSocket.accept();
+            log.info("Client connected successful: " + socket.getRemoteSocketAddress());
+
+            try (DataInputStream in = new DataInputStream(socket.getInputStream());
+                 DataOutputStream out = new DataOutputStream(socket.getOutputStream());
+                 BufferedReader keyboard = new BufferedReader(new InputStreamReader(System.in))) {
+
+//                out.write("you connected successful".getBytes(Charset.forName("UTF-8")));
+
+                new Thread(() -> {
+                    System.out.println("write you message");
+                    while (true) {
+                        char[] buf = new char[256];
+                        try {
+                            System.out.print("<<< ");
+                            int count = keyboard.read(buf);
+                            log.info("read " + count + " bytes success");
+                            out.write(new String(buf).getBytes(Charset.forName("UTF-8")));
+                            out.flush();
+
+                        } catch (IOException e) {
+                            log.error(e.getMessage(), e);
+
+                            return;
+                        }
+                    }
+                }).start();
+
+                while (execute) {
+                    if (socket.isInputShutdown()) System.out.println("input shutdown!");
+                    byte[] buf = new byte[255];
+                    int count = -1;
+                    try {
+                        count = in.read(buf);
+                    } catch (SocketException e) {
+                        log.error(e.getMessage(), e);
+                        setExecute(false);
+                    }
+                    log.info("read " + count + " bytes success");
+                    System.out.println(">>> " + new String(buf));
+                    log.info("Message from client: " + new String(buf));
+                    out.write(200);
+                    out.flush();
+                    log.info("Waiting for the next line...\n");
+                }
+            }
+
+        } catch (IOException e) {
+            log.error(e.getMessage(), e);
+        }
+    }
+
+    public boolean isExecute() {
+        return execute;
+    }
+
+    public void setExecute(boolean execute) {
+        this.execute = execute;
+    }
+}
