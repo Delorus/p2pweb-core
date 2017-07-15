@@ -1,4 +1,4 @@
-package ru.sherb;
+package ru.sherb.nat;
 
 
 import org.slf4j.Logger;
@@ -20,12 +20,16 @@ public class LifetimePortUpdater extends TimerTask {
     public void run() {
         log.info("refresh the port");
         try {
-            updateInstance.setPort(updateInstance.getMapper().refreshPort(updateInstance.getPort(), updateInstance.getPort().getLifetime() / 2));
+            long lifetime = updateInstance.getMappedPort().getLifetime() / 2;
+            if (lifetime <= 0) {
+                lifetime = updateInstance.getMappedPort().getLifetime();
+            }
+            updateInstance.setMappedPort(updateInstance.getMapper().refreshPort(updateInstance.getMappedPort(), lifetime));
 
         } catch (InterruptedException e) {
             log.warn(e.getMessage(), e);
         }
 
-        log.info("Port mapping refreshed: {} new lifetime: {} sec", updateInstance.getPort(), updateInstance.getPort().getLifetime());
+        log.info("Port mapping refreshed: {} new lifetime: {} sec", updateInstance.getMappedPort(), updateInstance.getMappedPort().getLifetime());
     }
 }

@@ -12,7 +12,7 @@ public class Launcher {
 
         final int port = args.length == 1 ? Integer.valueOf(args[0]) : 8021;
 
-        ServerP2P server = new ServerP2P(port, UdpMessageHandler.class);
+        Node server = new Node(port, UdpMessageHandler.class);
 
         server.run();
     }

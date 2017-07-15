@@ -1,4 +1,4 @@
-package ru.sherb;
+package ru.sherb.nat;
 
 
 import com.offbynull.portmapper.PortMapperFactory;
@@ -14,53 +14,65 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Timer;
 
-public class NatPmpPortOpener {
+public class NatPmpPortOpener implements IPortOpener, AutoCloseable {
 
     private static Logger log = LoggerFactory.getLogger(NatPmpPortOpener.class);
 
-    private final Timer timer = new Timer("update port lifetime");
+    private final Timer timer = new Timer("update mappedPort lifetime");
     private final Bus processBus;
     private final Bus networkBus;
 
     private PortMapper mapper;
-    private MappedPort port;
+    private MappedPort mappedPort;
+
+    private final int port;
 
     public NatPmpPortOpener() {
-        this.networkBus = NetworkGateway.create().getBus();
-        this.processBus = ProcessGateway.create().getBus();
+        this(8021);
     }
 
-    public void open(int port) throws InterruptedException {
+    public NatPmpPortOpener(int port) {
+        this.networkBus = NetworkGateway.create().getBus();
+        this.processBus = ProcessGateway.create().getBus();
+        this.port = port;
+    }
 
-        //TODO смотреть шлюз по умолчанию
-        List<PortMapper> mappers = PortMapperFactory.discover(networkBus, processBus);
-        mappers.forEach(portMapper -> log.info("mapping port: " + portMapper.getSourceAddress()));
+    public int open() {
 
-        if (mappers.isEmpty()) {
-            log.warn("port already opened or device with UPnP not discovered");
-            return;
+        try {
+            List<PortMapper> mappers = PortMapperFactory.discover(networkBus, processBus);
+
+            mappers.forEach(portMapper -> log.info("mapping mappedPort: " + portMapper.getSourceAddress()));
+
+            if (mappers.isEmpty()) {
+                log.warn("device with UPnP not discovered");
+                return port;
+            }
+
+            mapper = mappers.get(0);
+
+            this.mappedPort = mapper.mapPort(PortType.UDP, port, port, Duration.ofMinutes(5).getSeconds());
+
+        } catch (InterruptedException e) {
+            log.error(e.getMessage(), e);
         }
-
-        mapper = mappers.get(0);
-
-        this.port = mapper.mapPort(PortType.UDP, port, port, Duration.ofMinutes(5).getSeconds());
 
         timer.scheduleAtFixedRate(
                 new LifetimePortUpdater(this),
-                Duration.ofSeconds(getPort().getLifetime()).toMillis(),
-                Duration.ofSeconds(getPort().getLifetime()).toMillis()
+                Duration.ofSeconds(getMappedPort().getLifetime()).toMillis(),
+                Duration.ofSeconds(getMappedPort().getLifetime()).toMillis()
         );
 
+        return getMappedPort().getInternalPort();
     }
 
     public void close() {
         timer.cancel();
         try {
-            mapper.unmapPort(getPort()); //TODO кидает экзепшен, что порт не был маплен через него
+            mapper.unmapPort(getMappedPort()); //TODO кидает экзепшен, что порт не был маплен через него
 
         } catch (InterruptedException e) {
             log.error(e.getMessage(), e);
@@ -69,12 +81,12 @@ public class NatPmpPortOpener {
         processBus.send(new KillProcessRequest());
     }
 
-    public synchronized MappedPort getPort() {
-        return port;
+    public synchronized MappedPort getMappedPort() {
+        return mappedPort;
     }
 
-    public synchronized void setPort(MappedPort port) {
-        this.port = port;
+    public synchronized void setMappedPort(MappedPort mappedPort) {
+        this.mappedPort = mappedPort;
     }
 
     public PortMapper getMapper() {
